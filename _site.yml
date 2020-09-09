@@ -5,10 +5,10 @@ description: |
 output_dir: "docs"
 navbar:
   left:
-    - text: "Home"
-      href: index.html
     - text: Exploración
       href: 01_intro.html
+    - text: Clasificación
+      href: 02_clasificacion.html
     - text: Recursos
       href: recursos.html
   right:
