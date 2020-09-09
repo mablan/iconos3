@@ -1,0 +1,14 @@
+---
+title: "Pruebas para el proyecto iconos"
+description: |
+  Análisis y prototipos para el proyecto iconos
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+Desarrollado por:
+  Magdiel Ablan Bortone (mablan@gmail.com)
+
+Bajo la supervisión de los miembros del proyecto **ICONOS**

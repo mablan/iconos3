@@ -1,0 +1,22 @@
+---
+title: "Ensayos para el proyecto ICONOS"
+description: 
+  Clasificación automática de textos para sistemas de gestión documental
+site: distill::distill_website
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# Learn more about creating websites with Distill at:
+# https://rstudio.github.io/distill/website.html
+
+# Learn more about publishing to GitHub Pages at:
+# https://rstudio.github.io/distill/publish_website.html#github-pages
+
+```
+
+El objetivo de este proyecto es el desarrollo de algoritmos
+de clasificación automática y reconocimiento de patrones
+para la aplicación de reglas de negocio en sistemas de
+gestión documental.
