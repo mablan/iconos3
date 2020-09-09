@@ -31,4 +31,4 @@ textos que nos ocupa.
  de clasificación de textos usando el conjunto de datos de
  quejas al Buró de protección financiera de consumidores de
  Estados Unidos. El conjunto se puede descargar del sitio de [Kaggle](https://www.kaggle.com/cfpb/us-consumer-finance-complaints?select=consumer_complaints.csv)
- 
+ *(en progreso)*
