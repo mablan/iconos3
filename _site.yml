@@ -12,6 +12,6 @@ navbar:
     - text: Recursos
       href: recursos.html
   right:
-    - text: "About"
+    - text: Créditos
       href: about.html
 output: distill::distill_article
