@@ -3,6 +3,8 @@ title: "iconos"
 description: |
   iconos
 output_dir: "docs"
+base_url: https://mablan.github.io/iconos3/
+repository_url: https://mablan.github.io/iconos3/
 navbar:
   left:
     - text: Exploración
