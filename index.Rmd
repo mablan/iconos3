@@ -20,3 +20,10 @@ El objetivo de este proyecto es el desarrollo de algoritmos
 de clasificación automática y reconocimiento de patrones
 para la aplicación de reglas de negocio en sistemas de
 gestión documental.
+
+- [EDA de textos](01_intro.html): Se implementan algunas
+de las técnicas estadísticas para análisis de textos usando
+el conjunto de datos [Revisiones de productos de Amazon](https://www.kaggle.com/kashnitsky/hierarchical-text-classification)
+que presenta una semejanza al problema de clasificación de
+textos que nos ocupa.
+
