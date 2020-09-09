@@ -1,0 +1,481 @@
+---
+title: "Análisis exploratorio de datos"
+subtitle: "Amazon reviews"
+author: "Magdiel Ablan"
+date: "8/12/2020"
+output: 
+    html_document: 
+      code_download: true 
+      number_sections: yes
+      code_folding: hide
+      theme: lumen
+      toc: yes
+      toc_float:
+        collapsed: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(cache = TRUE)
+library(tidyverse)
+library(tidytext)
+library(readr)
+library(janitor)
+library(scales)
+library(widyr)
+library(topicmodels)
+```
+
+# Introducción
+
+A continuación realizamos un análisis exploratorio de datos
+del conjunto de datos de [revisión de
+productos de Amazon](https://www.kaggle.com/kashnitsky/hierarchical-text-classification) que se encuentra en Kaggle.
+
+La idea es usar este conjunto de datos como un *proxy* que permita
+aproximarnos al problema de clasificar documentos planteado en el proyecto **iconos**.
+
+Este conjunto de datos tiene tres niveles  o categorías de
+clasificación:
+
+1. Nivel 1: 6 clases
+2. Nivel 2: 64 clases
+3. Nivel 3: 510 clases 
+
+y tres conjuntos de datos:
+
+ - train_40k.csv: para entrenamiento 40000 registros
+ - valid_10k.csv: para validación 10000 registros
+ - unlabeled_150k.csv: 150000 registros sin etiqueta 
+
+El análisis exploratorio lo vamos a realizar con el 
+conjunto de entrenamiento y por el momento con el primer
+nivel de clasificación.
+
+Las variables que tiene son:
+
+ - product_id
+ - title
+ - user_id
+ - helpfulness
+ - score
+ - time
+ - text
+ - cat1
+ - cat2
+ - cat3
+
+# Ingestión de datos
+
+```{r}
+train_40k <- read_csv("datos/train_40k.csv") %>% 
+  clean_names()
+glimpse(train_40k)
+```
+
+Para evitar problemas de memoria más adelante, se crea una muestra
+de 20000 observaciones del conjunto de entrenamiento. Con eso vamos a trabajar:
+
+```{r}
+set.seed(1234)
+ind_20k <- sample(1:40000,size = 20000,replace = FALSE)
+train_20k <- train_40k[ind_20k,]
+```
+
+Añadimos un `id` a los registros y seleccionamos solo el texto y la categoría 1
+
+```{r}
+n_reviews <- dim(train_20k)[1]
+id <- 1:n_reviews
+
+text_cat1 <- train_20k %>%
+  select(product_id,text,cat1) %>% 
+  mutate(id = id)
+
+glimpse(text_cat1)
+```
+
+Contamos cuantos registros tenemos en cada categoría: 
+```{r}
+text_cat1 %>% 
+  group_by(cat1) %>% 
+  tally()
+```
+
+
+Extraemos las palabras en el texto:
+```{r}
+palabras <- text_cat1 %>%
+  unnest_tokens(word,text)
+
+glimpse(palabras)
+```
+
+y excluimos las palabras vacías 
+```{r}
+data(stop_words)
+palabras <- palabras %>% 
+  anti_join(stop_words)
+
+```
+
+Calculamos la frecuencia de palabras en orden descendente
+```{r}
+palabras %>% 
+  count(word, sort = TRUE)
+
+```
+
+y las visualizamos:
+
+```{r}
+palabras %>% 
+  count(word, sort = TRUE) %>% 
+  filter(n > 2000) %>% 
+  mutate(word = reorder(word,n)) %>% 
+  ggplot(aes(word,n)) + 
+  geom_col() +
+  xlab(NULL) +
+  coord_flip()
+```
+
+Vamos a hacer un gráfico que sirva para comparar la frecuencia relativa de palabras por categoría tomando como referencia la categoría más común que es *toys games*  
+
+```{r}
+frequencia <- palabras %>% 
+  count(cat1,word) %>% 
+  group_by(cat1) %>% 
+  mutate(proporcion = n/sum(n)) %>% 
+  select(-n) %>% 
+  pivot_wider(names_from = "cat1", values_from = "proporcion") %>% 
+  pivot_longer(`baby products`:`pet supplies`,names_to = "cat1",
+               values_to = "proporcion")
+```
+
+```{r}
+ggplot(frequencia, aes(x = proporcion, y = `toys games`, 
+                      color = abs(`toys games` - proporcion))) +
+  geom_abline(color = "gray40", lty = 2) +
+  geom_jitter(alpha = 0.1, size = 2.5, width = 0.3, height = 0.3) +
+  geom_text(aes(label = word), check_overlap = TRUE, vjust = 1.5) +
+  scale_x_log10(labels = percent_format()) +
+  scale_y_log10(labels = percent_format()) +
+  scale_color_gradient(limits = c(0, 0.001),
+                       low = "darkslategray4", high = "gray75") +
+  facet_wrap(~cat1, ncol = 2) +
+  theme(legend.position = "none") +
+  labs(y = "toys games", x = NULL) 
+
+```
+
+También podemos calcular explícitamente la correlación para
+cada par de variables:
+
+```{r}
+cor.test(data = frequencia[frequencia$cat1 == "baby products",],
+         ~ proporcion + `toys games`)
+
+cor.test(data = frequencia[frequencia$cat1 == "beauty",],
+         ~ proporcion + `toys games`)
+
+cor.test(data = frequencia[frequencia$cat1 == "grocery gourmet food",],
+         ~ proporcion + `toys games`)
+
+cor.test(data = frequencia[frequencia$cat1 == "health personal care",],
+         ~ proporcion + `toys games`)
+
+cor.test(data = frequencia[frequencia$cat1 == "pet supplies",],
+         ~ proporcion + `toys games`)
+
+
+```
+
+# Analizando la frequencia de palabras
+
+Vamos a calcular el estadístico *tf-idf* para las diferentes
+palabras en las categorías.
+
+Primero, contamos la frecuencia de las palabras en cada una
+de las categorías:
+
+```{r}
+palabras_cat1 <- text_cat1 %>%
+  unnest_tokens(word,text) %>% 
+  count(cat1,word, sort = TRUE)
+
+# Lo mismo que
+# palabras2 <- text_cat1 %>%
+#   unnest_tokens(word,text) %>%
+#   group_by(cat1,word) %>% 
+#   tally(sort = TRUE)
+
+glimpse(palabras_cat1)
+
+
+```
+
+Luego calculamos el total de palabras en cada categoría:
+```{r}
+total_palabras <- palabras_cat1 %>% 
+  group_by(cat1) %>% 
+  summarize(total = sum(n))
+
+total_palabras
+```
+
+y finalmente, unimos ambos conjuntos:
+
+```{r}
+palabras_cat1 <- left_join(palabras_cat1,total_palabras)
+
+palabras_cat1
+```
+
+Podemos visualizar la frecuencia relativa de las palabras por
+categoría así:
+
+```{r}
+ggplot(palabras_cat1, aes(n/total, fill = cat1)) +
+  geom_histogram(show.legend = FALSE) +
+  xlim(NA,0.0009) +
+  facet_wrap(~cat1, ncol = 2, scales = "free_y")
+
+```
+
+Ya tenemos todo lo necesario para calcular *tf-idf*
+```{r}
+palabras_cat1 <- palabras_cat1 %>% 
+  bind_tf_idf(word, cat1, n)
+
+palabras_cat1 <- left_join(palabras_cat1,total_palabras)
+
+```
+
+Mejor si lo ordenamos en orden descendente:
+```{r}
+palabras_cat1 <- palabras_cat1 %>% 
+  bind_tf_idf(word, cat1, n) %>% 
+  select(-total) %>%
+  arrange(desc(tf_idf))
+
+palabras_cat1
+```
+
+y ahora podemos visualizar digamos las 10 más importantes
+por grupo
+
+```{r}
+palabras_cat1 %>%
+  arrange(desc(tf_idf)) %>%
+  mutate(word = factor(word, levels = rev(unique(word)))) %>% 
+  group_by(cat1) %>% 
+  top_n(10,wt = tf_idf) %>% 
+  ungroup() %>%
+  ggplot(aes(word, tf_idf, fill = cat1)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "tf-idf") +
+  facet_wrap(~cat1, ncol = 2, scales = "free") +
+  coord_flip()
+```
+
+# Relaciones entre palabras n-gramas y correlaciones
+
+Tokenizamos por bigramas esta vez:
+```{r}
+bigramas <- text_cat1 %>%
+  unnest_tokens(bigram, text, token = "ngrams", n = 2)
+```
+
+y calculamos su frequencia
+```{r}
+bigramas %>% 
+  count(bigram, sort = TRUE)
+```
+
+los separamos para poder excluir los que contienen palabras vacías
+```{r}
+bigramas_separados <- bigramas %>% 
+  separate(bigram, c("palabra1","palabra2"), sep = " ") 
+
+bigramas_filtrados <- bigramas_separados %>% 
+  filter(!palabra1 %in% stop_words$word) %>% 
+  filter(!palabra2 %in% stop_words$word)
+
+bigramas_filtrados
+```
+
+y calculamos su frecuencia
+```{r}
+cuenta_bigramas <- bigramas_filtrados %>% 
+  count(palabra1,palabra2,sort = TRUE)
+
+cuenta_bigramas
+```
+
+Los unimos de nuevo y calculamos su tf_idf
+```{r}
+bigramas_unidos <- bigramas_filtrados %>% 
+  unite(bigram, palabra1, palabra2, sep = " ")
+
+```
+
+```{r}
+bigramas_tf_idf <- bigramas_unidos %>%
+  count(cat1,bigram) %>% 
+  bind_tf_idf(bigram,cat1,n) %>% 
+  arrange(desc(tf_idf))
+
+bigramas_tf_idf
+```
+
+# Modelado de temas usando LDA
+
+Regresamos a la lista de palabras con su frecuencia y sin palabras vacías:
+
+```{r}
+palabras_tidy <- text_cat1 %>%
+  unnest_tokens(word,text) %>%
+   anti_join(stop_words) %>% 
+  count(id,word, sort = TRUE) 
+ 
+
+palabras_tidy
+
+
+```
+
+Para hacer el LDA se usa la librería `tm` que requiere la información
+en un formato de matriz de términos del documento. Eso es lo que hacemos
+en este paso:
+
+```{r}
+dtm_palabras <- palabras_tidy %>% 
+  cast_tdm(id,word,n)
+
+```
+
+Con la función `LDA` creamos un modelo de 6 términos:
+```{r}
+review_lda <- LDA(dtm_palabras, k = 6, control = list(seed = 1234))
+```
+
+Ahora, se pueden examinar las probabilidades asociadas a cada palabra 
+por tópico
+
+```{r}
+review_topics <- tidy(review_lda, matrix = "beta")
+review_topics
+```
+
+Podemos hallar cuales son las palabras más comunes por cada tema:
+
+```{r}
+review_top_terms <- review_topics %>%
+  group_by(topic) %>%
+  top_n(5, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+review_top_terms
+```
+
+Visualmente:
+
+```{r}
+review_top_terms %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  coord_flip() +
+  scale_x_reordered()
+
+```
+
+## Clasificación de las revisiones
+
+Calculamos la probabilidad por documento y por tema. En este caso, cada documento constituye una revisión. 
+
+```{r}
+review_topics_gamma <- tidy(review_lda, matrix = "gamma")
+
+review_topics_gamma <- review_topics_gamma %>% 
+  mutate(id = as.numeric(document))
+```
+
+Para tratar de determinar hasta que punto los tópicos detectados corresponden a las clasificaciones de `cat1` vamos a combinar la información de ambos en `cat1_gamma` y a visualizarlos:
+
+```{r}
+cat1_gamma <- left_join(review_topics_gamma,text_cat1) 
+
+
+cat1_gamma %>%
+  mutate(cat1 = reorder(cat1, gamma * topic)) %>%
+  ggplot(aes(factor(topic), gamma)) +
+  geom_boxplot(outlier.alpha = 0.3) +
+  facet_wrap(~ cat1)
+
+
+```
+
+Veamos cual es el tópico más asociado a cada categoría
+```{r}
+cat1_classifications <- cat1_gamma %>%
+  group_by(cat1, id) %>%
+  top_n(1, gamma) %>%
+  ungroup()
+
+cat1_topics <- cat1_classifications %>%
+  count(cat1, topic) %>%
+  group_by(cat1) %>%
+  top_n(1, n) %>%
+  ungroup() %>%
+  transmute(consensus = cat1, topic)
+
+
+
+```
+
+Podemos calcular cual es el tṕico más frecuente o común en
+cada una de las categorías
+
+```{r}
+cat1_topics <- cat1_classifications %>%
+  count(cat1, topic) %>%
+  group_by(cat1) %>%
+  top_n(1, n) %>%
+  ungroup() %>%
+  transmute(consensus = cat1, topic)
+
+cat1_topics
+
+```
+
+y al unirlo con las `cat1_classifications` podemos ver cuales
+observaciones se encuentran incorrectamente clasificadas:
+
+```{r}
+cat1_classifications %>% 
+  inner_join(cat1_topics, by = "topic") %>% 
+  filter(cat1 != consensus)
+
+cat1_classifications
+```
+
+
+
+# A manera de conclusiones
+
+ * Es posible detectar diferencias en las palabras usadas por
+categoría usando tf-idf
+
+ * Sin embargo, el modelo LDA no parece separar muy bien las diferentes
+categorías
+
+Próxima vez:
+
+* Comenzar con un primer modelo supervisado
+ 
+
