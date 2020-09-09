@@ -1,7 +1,5 @@
 name: "iconos3"
-title: "iconos"
-description: |
-  iconos
+title: "ICONOS"
 output_dir: "docs"
 base_url: https://mablan.github.io/iconos3/
 repository_url: https://mablan.github.io/iconos3/
